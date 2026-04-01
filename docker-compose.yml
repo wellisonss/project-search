@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  # 1. MOTOR DE BUSCA (MEILISEARCH)
+  meilisearch:
+    image: getmeili/meilisearch:latest
+    container_name: motor_busca_prod
+    restart: unless-stopped
+    ports:
+      - "7700:7700"
+    environment:
+      # Puxa os valores diretamente do ficheiro .env
+      - MEILI_ENV=${MEILI_ENV}
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+    volumes:
+      # Guarda os índices e configurações do motor fisicamente no servidor
+      - ./meili_data:/meili_data
+
+  # 2. A SUA API (NESTJS)
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api_busca_prod
+    restart: unless-stopped
+    ports:
+      - "${PORT:-4448}:4448"
+    environment:
+      - MEILISEARCH_HOST=${MEILISEARCH_HOST}
+      # Reutilizamos a mesma chave do motor para a API
+      - MEILISEARCH_KEY=${MEILI_MASTER_KEY}
+    depends_on:
+      - meilisearch
+    volumes:
+      # Guarda o ficheiro SQLite fisicamente na pasta ./data do seu servidor
+      - ./data:/app/data
