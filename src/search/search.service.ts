@@ -13,39 +13,64 @@ export class SearchService implements OnModuleInit {
     private historicoRepository: Repository<HistoricoBusca>,
   ) {
     this.client = new Meilisearch({
-      host: process.env.MEILISEARCH_HOST || 'http://localhost:7700',
-      apiKey: process.env.MEILISEARCH_KEY || 'Senha@123!', 
+      // Configurado para o nome do serviço no Docker
+      host: process.env.MEILISEARCH_HOST || 'http://meilisearch:7700',
+      apiKey: process.env.MEILISEARCH_KEY || 'MinhaSenhaForteDeProducao2026!', 
     });
   }
 
   async onModuleInit() {
-    console.log('⏳ Configurando regras base do Meilisearch...');
+    console.log('⏳ Aplicando Configurações Avançadas de Tolerância e Relevância...');
     const index = this.client.index('produtos');
 
+    // Usamos updateSettings para garantir que todas as regras sejam aplicadas juntas
     await index.updateSettings({
+      // 1. Tolerância a Erros: Muito mais permissiva
+      typoTolerance: {
+        enabled: true,
+        minWordSizeForTypos: { 
+          oneTypo: 2,  // Palavras curtas (2+ letras) já aceitam 1 erro (Ex: "B" por "P")
+          twoTypos: 4  // Palavras com 4+ letras aceitam 2 erros (Ex: "blastico")
+        },
+        disableOnAttributes: [], 
+      },
+
+      // 2. Ranking Rules: Define a importância da busca
+      // Colocamos 'typo' no topo para garantir que erros de digitação não excluam o produto
+      rankingRules: [
+        'words',
+        'typo',      // <--- Prioridade para tolerância a erros
+        'proximity',
+        'attribute',
+        'sort',
+        'exactness',
+      ],
+
+      // 3. Atributos Pesquisáveis
+      searchableAttributes: [
+        'sku', 'name', 'brand', 'categories', 'fornecedor', 'segmento'
+      ],
+
+      // 4. Configurações de Dicionário e Caracteres
       dictionary: ['d+'], 
       nonSeparatorTokens: ['+'], 
+
+      // 5. Ajuste de Paginação: Permite que o contador do painel chegue até 10.000
+      pagination: {
+        maxTotalHits: 10000
+      }
     });
 
-    await index.updateTypoTolerance({
-      enabled: true,
-      minWordSizeForTypos: { oneTypo: 4, twoTypos: 8 }
-    });
-
-    await index.updateSearchableAttributes([
-      'sku', 'name', 'brand', 'categories', 'fornecedor', 'segmento'
-    ]);
-
-    console.log('✅ Regras base configuradas!');
+    console.log('✅ Meilisearch configurado! Teste "blastico" no seu painel.');
   }
 
-  // 1. Atualizar Sinônimos
+  // 1. Atualizar Sinónimos
   async atualizarSinonimos(sinonimos: Record<string, string[]>) {
     const index = this.client.index('produtos');
     return await index.updateSynonyms(sinonimos);
   }
 
-  // 2. Listar Sinônimos Atuais
+  // 2. Listar Sinónimos Atuais
   async listarSinonimos() {
     const index = this.client.index('produtos');
     return await index.getSynonyms();
@@ -57,12 +82,11 @@ export class SearchService implements OnModuleInit {
     return await index.addDocuments(produtos, { primaryKey: 'id' });
   }
 
-  // 4. Buscar com termo
-async procurar(termo: string) {
+  // 4. Procurar (Utilizado no Playground de Teste)
+  async procurar(termo: string) {
     const index = this.client.index('produtos');
     const resultados = await index.search(termo, { limit: 20 });
 
-    // Salva a métrica no SQLite de forma ASSÍNCRONA (não trava a resposta para o usuário)
     if (termo && termo.trim() !== '') {
       const log = this.historicoRepository.create({
         termo: termo.toLowerCase().trim(),
@@ -74,18 +98,26 @@ async procurar(termo: string) {
     return resultados.hits;
   }
 
-  // 5. NOVO: Listar todos os produtos cadastrados (limite de 100 para não sobrecarregar)
+  // 5. Listar Produtos com Contador Real para o Painel
   async listarProdutos() {
     const index = this.client.index('produtos');
-    // Faz uma busca vazia para trazer tudo o que está indexado
-    const resultados = await index.search('', { limit: 100 });
-    return resultados.hits;
+    
+    // Pega as estatísticas reais para o contador do topo da página
+    const stats = await index.getStats();
+
+    // Faz a busca (vazia) para a tabela com limite alto para a paginação local
+    const resultados = await index.search('', { limit: 5000 });
+
+    return {
+      produtos: resultados.hits,
+      total_produtos: stats.numberOfDocuments
+    };
   }
-async obterMetricas() {
-    // 1. Total de pesquisas realizadas
+
+  // 6. Obter Métricas para o Dashboard
+  async obterMetricas() {
     const totalPesquisas = await this.historicoRepository.count();
 
-    // 2. Top 10 Termos mais buscados (Agrupa e conta com SQL puro)
     const termosMaisBuscados = await this.historicoRepository
       .createQueryBuilder('historico')
       .select('historico.termo', 'termo')
@@ -95,7 +127,6 @@ async obterMetricas() {
       .limit(10)
       .getRawMany();
 
-    // 3. Pesquisas que não retornaram resultados (Oportunidade de adicionar sinônimos ou produtos novos!)
     const pesquisasSemResultado = await this.historicoRepository
       .createQueryBuilder('historico')
       .select('historico.termo', 'termo')

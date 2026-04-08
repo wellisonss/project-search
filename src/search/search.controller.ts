@@ -31,16 +31,16 @@ export class SearchController {
 
   // NOVO: Rota que junta e mostra tudo o que está dentro do Meilisearch
   @Get('cadastrados')
-  async listarTudo() {
-    const produtos = await this.searchService.listarProdutos();
-    const sinonimos = await this.searchService.listarSinonimos();
-
-    return {
-      total_produtos: produtos.length,
-      produtos: produtos,
-      sinonimos: sinonimos
-    };
-  }
+    async listarCadastrados() {
+      const resultado = await this.searchService.listarProdutos();
+      
+      return {
+        // ALTERADO: O Service agora devolve um objeto com a chave 'produtos'
+        produtos: resultado.produtos,
+        // ALTERADO: O total real já vem calculado pelo Service
+        total_produtos: resultado.total_produtos,
+      };
+    }
 
   @Get('metricas')
   async verMetricas() {

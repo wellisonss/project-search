@@ -2,6 +2,7 @@
 /dist
 /node_modules
 /build
+/meili_data
 
 # Logs
 logs
