@@ -13,70 +13,64 @@ export class SearchService implements OnModuleInit {
     private historicoRepository: Repository<HistoricoBusca>,
   ) {
     this.client = new Meilisearch({
-      // Configurado para o nome do serviço no Docker
       host: process.env.MEILISEARCH_HOST || 'http://meilisearch:7700',
       apiKey: process.env.MEILISEARCH_KEY || 'MinhaSenhaForteDeProducao2026!', 
     });
   }
 
   async onModuleInit() {
-    console.log('⏳ Aplicando Configurações Avançadas de Tolerância e Relevância (31 Campos)...');
+    console.log('⏳ Aplicando Configurações Avançadas de Tolerância e Relevância...');
     const index = this.client.index('produtos');
 
-    // Usamos updateSettings para garantir que todas as regras sejam aplicadas juntas
     await index.updateSettings({
-      // 1. Tolerância a Erros: Muito mais permissiva
       typoTolerance: {
         enabled: true,
         minWordSizeForTypos: { 
-          oneTypo: 2,  // Palavras curtas (2+ letras) já aceitam 1 erro (Ex: "B" por "P")
-          twoTypos: 4  // Palavras com 4+ letras aceitam 2 erros (Ex: "blastico")
+          oneTypo: 2,
+          twoTypos: 4
         },
         disableOnAttributes: [], 
       },
-
-      // 2. Ranking Rules: Define a importância da busca
       rankingRules: [
         'words',
-        'typo',      // <--- Prioridade para tolerância a erros
+        'typo',
         'proximity',
         'attribute',
         'sort',
         'exactness',
       ],
-
-      // 3. Atributos Pesquisáveis (Busca Textual)
       searchableAttributes: [
         'sku', 'name', 'brand', 'categories', 'fornecedor', 'segmento'
       ],
-
-      // 3.1 Atributos Filtráveis (WHERE) - Novo Mapeamento
       filterableAttributes: [
         'brand', 'categories', 'fornecedor', 'segmento',
         'uf_maranhao', 'uf_tocantins', 'uf_para', 'uf_nacional',
         'saldo_MA', 'saldo_TO', 'saldo_PA', 'quantityAvailable', 'isActive'
       ],
-
-      // 3.2 Atributos Ordenáveis (ORDER BY) - Novo Mapeamento
       sortableAttributes: [
         'price', 'saldo_MA', 'saldo_TO', 'saldo_PA', 'custo_cd', 'ranking'
       ],
-
-      // 4. Configurações de Dicionário e Caracteres
       dictionary: ['d+'], 
       nonSeparatorTokens: ['+'], 
-
-      // 5. Ajuste de Paginação: Permite que o contador do painel chegue até 10.000
       pagination: {
         maxTotalHits: 10000
       }
     });
 
-    console.log('✅ Meilisearch configurado! Teste "blastico" no seu painel.');
+    console.log('✅ Meilisearch configurado com sucesso!');
+  }
+
+  // --- 0. FUNÇÃO PARA LIMPAR O MOTOR (NOVA) ---
+  async limparMotor() {
+    const index = this.client.index('produtos');
+    const task = await index.deleteAllDocuments();
+    return { 
+      mensagem: 'Todos os produtos foram removidos do motor de busca com sucesso!', 
+      taskUid: task.taskUid 
+    };
   }
 
   // --- 1. FUNÇÕES DE SINÓNIMOS ---
-  
   async atualizarSinonimos(sinonimos: Record<string, string[]>) {
     const index = this.client.index('produtos');
     return await index.updateSynonyms(sinonimos);
@@ -104,12 +98,10 @@ export class SearchService implements OnModuleInit {
   }
 
   // --- 2. INDEXAÇÃO E SINCRONIZAÇÃO ---
-
-async indexarProdutos(payload: { full_sync: boolean; produtos: any[] }) {
+  async indexarProdutos(payload: { full_sync: boolean; produtos: any[] }) {
     const index = this.client.index('produtos');
     const { full_sync, produtos } = payload;
 
-    // 1. Carregar o que já existe para comparar
     const existingDocs = new Map<string, any>();
     try {
       const result = await index.getDocuments({ limit: 100000 });
@@ -121,7 +113,6 @@ async indexarProdutos(payload: { full_sync: boolean; produtos: any[] }) {
     let inalterados = 0;
     const incomingIds = new Set<string>();
 
-    // 2. Lógica de comparação (Diff)
     for (const prod of produtos) {
       const skuStr = String(prod.sku);
       incomingIds.add(skuStr);
@@ -131,7 +122,6 @@ async indexarProdutos(payload: { full_sync: boolean; produtos: any[] }) {
       if (!docExistente) {
         novos++;
       } else {
-        // Compara se mudou algo (preço, saldo, status...)
         const mudou = JSON.stringify(prod) !== JSON.stringify(docExistente);
         if (mudou) {
           atualizados++;
@@ -141,12 +131,10 @@ async indexarProdutos(payload: { full_sync: boolean; produtos: any[] }) {
       }
     }
 
-    // 3. Enviar para o Meilisearch (Upsert)
     if (produtos.length > 0) {
       await index.addDocuments(produtos, { primaryKey: 'sku' });
     }
 
-    // 4. Se for Full Sync, remove o que não veio na carga
     let removidos = 0;
     if (full_sync) {
       const idsToDelete: string[] = [];
@@ -159,7 +147,6 @@ async indexarProdutos(payload: { full_sync: boolean; produtos: any[] }) {
       }
     }
 
-    // RETORNO COM MÉTRICAS (Igual você pediu)
     return {
       mensagem: full_sync ? 'Sincronização Total Concluída!' : 'Lote Processado!',
       estatisticas: {
@@ -171,8 +158,8 @@ async indexarProdutos(payload: { full_sync: boolean; produtos: any[] }) {
       }
     };
   }
+
   // --- 3. BUSCA PRINCIPAL (VITRINE) ---
-  
   async searchProdutosCatalogo(
     termo: string, 
     page: number, 
@@ -187,7 +174,9 @@ async indexarProdutos(payload: { full_sync: boolean; produtos: any[] }) {
   ) {
     const index = this.client.index('produtos');
     const offset = (page - 1) * limit;
-    const filters: string[] = ["(isActive = 'S' OR isActive = 'true' OR isActive = 1)"];
+    
+    // Tratamento rigoroso de filtros para não retornar vazio
+    const filters: string[] = ["(isActive = 'S' OR isActive = 'true' OR isActive = '1')"];
 
     const comEstoque = String(apenasComEstoque) === 'true';
     if (estado === 'MA') {
@@ -204,13 +193,28 @@ async indexarProdutos(payload: { full_sync: boolean; produtos: any[] }) {
     }
 
     const formatArrayFilter = (field: string, values: string[]) => {
-      return `(${values.map(v => `${field} = "${v.trim()}"`).join(' OR ')})`;
+      // Filtra valores vazios para evitar quebra no Meilisearch
+      const validValues = values.filter(v => v && v.trim() !== '');
+      if (validValues.length === 0) return null;
+      return `(${validValues.map(v => `${field} = "${v.trim()}"`).join(' OR ')})`;
     };
 
-    if (brands && brands.length > 0) filters.push(formatArrayFilter('brand', brands));
-    if (categories && categories.length > 0) filters.push(formatArrayFilter('categories', categories));
-    if (fornecedores && fornecedores.length > 0) filters.push(formatArrayFilter('fornecedor', fornecedores));
-    if (segmentos && segmentos.length > 0) filters.push(formatArrayFilter('segmento', segmentos));
+    if (brands && brands.length > 0) {
+      const bFilter = formatArrayFilter('brand', brands);
+      if (bFilter) filters.push(bFilter);
+    }
+    if (categories && categories.length > 0) {
+      const cFilter = formatArrayFilter('categories', categories);
+      if (cFilter) filters.push(cFilter);
+    }
+    if (fornecedores && fornecedores.length > 0) {
+      const fFilter = formatArrayFilter('fornecedor', fornecedores);
+      if (fFilter) filters.push(fFilter);
+    }
+    if (segmentos && segmentos.length > 0) {
+      const sFilter = formatArrayFilter('segmento', segmentos);
+      if (sFilter) filters.push(sFilter);
+    }
 
     const sortRules: string[] = [];
     if (sort === 'menor-preco') sortRules.push('price:asc');
@@ -265,11 +269,14 @@ async indexarProdutos(payload: { full_sync: boolean; produtos: any[] }) {
       _searchScore: hit._rankingScore ? Math.round(hit._rankingScore * 100) : 0,
     }));
 
-    return { produtos: produtosFormatados };
+    // Retorno alterado para casar com o seu requisito exato {"produtos": [], "total": X}
+    return { 
+        produtos: produtosFormatados,
+        total: searchResult.estimatedTotalHits ?? (searchResult as any).totalHits ?? 0
+      };
   }
 
   // --- 4. FUNÇÕES DO PAINEL / PLAYGROUND ---
-
   async procurar(termo: string) {
     const index = this.client.index('produtos');
     const resultados = await index.search(termo, { limit: 20 });

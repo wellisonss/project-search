@@ -6,6 +6,14 @@ export class SearchController {
   constructor(private readonly searchService: SearchService) {}
 
   // ==========================================
+  // ROTA PARA LIMPAR O MOTOR (NOVA)
+  // ==========================================
+  @Delete('limpar')
+  async limparMotor() {
+    return await this.searchService.limparMotor();
+  }
+
+  // ==========================================
   // ROTA PRINCIPAL DE BUSCA (VITRINE)
   // ==========================================
   @Get('search')
@@ -21,14 +29,13 @@ export class SearchController {
     @Query('segmentos') segmentos?: string,
     @Query('sort') sort?: string,
   ) {
-    // Garante que, se for null ou undefined, vira um array vazio
     const parsedBrands = brands ? brands.split(',') : [];
     const parsedCategories = categories ? categories.split(',') : [];
     const parsedFornecedores = fornecedores ? fornecedores.split(',') : [];
     const parsedSegmentos = segmentos ? segmentos.split(',') : [];
 
     return await this.searchService.searchProdutosCatalogo(
-      termo ?? '', // Se for nulo, passa uma string vazia (resolve o erro)
+      termo ?? '', 
       page ? Number(page) : 1, 
       limit ? Number(limit) : 70, 
       estado ?? undefined, 
@@ -60,7 +67,6 @@ export class SearchController {
   // ==========================================
   // ROTAS DE GESTÃO DE SINÓNIMOS
   // ==========================================
-  
   @Post('sinonimos')
   async salvarSinonimos(@Body() body: Record<string, string[]>) {
     await this.searchService.atualizarSinonimos(body);
@@ -92,7 +98,6 @@ export class SearchController {
   // ==========================================
   // ROTAS ADMINISTRATIVAS E MÉTRICAS
   // ==========================================
-
   @Get('cadastrados')
   async listarCadastrados() {
     const resultado = await this.searchService.listarProdutos();
