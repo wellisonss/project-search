@@ -183,7 +183,7 @@ export class SearchService implements OnModuleInit {
   ) {
     const index = this.client.index('produtos');
     const offset = (page - 1) * limit;
-    const filters: string[] = ["isActive = 'S'"]; 
+    const filters: string[] = ["(isActive = 'S' OR isActive = 'true' OR isActive = 1)"];
 
     const comEstoque = String(apenasComEstoque) === 'true';
     if (estado === 'MA') {
