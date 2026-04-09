@@ -70,20 +70,50 @@ export class SearchService implements OnModuleInit {
     };
   }
 
-  // --- 1. FUNÇÕES DE SINÓNIMOS ---
-  async atualizarSinonimos(sinonimos: Record<string, string[]>) {
+// --- 1. FUNÇÕES DE SINÓNIMOS (COM TRADUTOR BIDIRECIONAL) ---
+  
+  async atualizarSinonimos(sinonimosDoPainel: Record<string, string[]>) {
     const index = this.client.index('produtos');
-    return await index.updateSynonyms(sinonimos);
+    const sinonimosMeili: Record<string, string[]> = {};
+
+    for (const [palavraCorreta, termosPesquisados] of Object.entries(sinonimosDoPainel)) {
+      // 1. A palavra correta busca ela mesma e os erros
+      sinonimosMeili[palavraCorreta] = termosPesquisados;
+
+      // 2. O PULO DO GATO: Fazemos cada erro apontar para a palavra correta
+      for (const termoErrado of termosPesquisados) {
+        const termoLimpo = termoErrado.trim();
+        if (termoLimpo !== '') {
+          // Quando o usuário digitar o erro, o motor é forçado a buscar a palavra correta
+          sinonimosMeili[termoLimpo] = [palavraCorreta];
+        }
+      }
+    }
+
+    return await index.updateSynonyms(sinonimosMeili);
   }
 
   async listarSinonimos() {
     const index = this.client.index('produtos');
-    return await index.getSynonyms();
-  }
+    const sinonimosMeili = await index.getSynonyms();
+    
+    if (!sinonimosMeili) return {};
 
-  async resetarSinonimos() {
-    const index = this.client.index('produtos');
-    return await index.resetSynonyms();
+    const sinonimosPainel: Record<string, string[]> = {};
+    const chavesIgnoradas = new Set<string>();
+
+    // Lógica reversa: Limpa a "sujeira" bidirecional para o seu painel ver o formato limpo
+    for (const [palavraPrincipal, variacoes] of Object.entries(sinonimosMeili)) {
+      if (chavesIgnoradas.has(palavraPrincipal)) continue;
+
+      sinonimosPainel[palavraPrincipal] = variacoes;
+      
+      for (const variacao of variacoes) {
+        chavesIgnoradas.add(variacao);
+      }
+    }
+
+    return sinonimosPainel;
   }
 
   async removerUmSinonimo(palavraChave: string) {
@@ -91,10 +121,24 @@ export class SearchService implements OnModuleInit {
     const sinonimosAtuais = await index.getSynonyms();
 
     if (sinonimosAtuais && sinonimosAtuais[palavraChave]) {
+      const variacoes = sinonimosAtuais[palavraChave] || [];
+      
+      // Deleta a palavra principal
       delete sinonimosAtuais[palavraChave];
+
+      // Deleta as amarras dos erros que apontavam para ela
+      for (const variacao of variacoes) {
+        delete sinonimosAtuais[variacao];
+      }
+
       return await index.updateSynonyms(sinonimosAtuais);
     }
     return null; 
+  }
+
+  async resetarSinonimos() {
+    const index = this.client.index('produtos');
+    return await index.resetSynonyms();
   }
 
   // --- 2. INDEXAÇÃO E SINCRONIZAÇÃO ---
