@@ -105,68 +105,72 @@ export class SearchService implements OnModuleInit {
 
   // --- 2. INDEXAÇÃO E SINCRONIZAÇÃO ---
 
-  async indexarProdutos(payload: { full_sync: boolean; produtos: any[] }) {
+async indexarProdutos(payload: { full_sync: boolean; produtos: any[] }) {
     const index = this.client.index('produtos');
     const { full_sync, produtos } = payload;
 
+    // 1. Carregar o que já existe para comparar
     const existingDocs = new Map<string, any>();
     try {
       const result = await index.getDocuments({ limit: 100000 });
-      // CORREÇÃO: Usando sku em vez de id
       result.results.forEach(doc => existingDocs.set(String(doc.sku), doc));
     } catch (e) {}
 
-    let novos = 0, atualizados = 0, inalterados = 0;
+    let novos = 0;
+    let atualizados = 0;
+    let inalterados = 0;
     const incomingIds = new Set<string>();
 
+    // 2. Lógica de comparação (Diff)
     for (const prod of produtos) {
-      // CORREÇÃO: Usando sku em vez de id
-      const strId = String(prod.sku);
-      incomingIds.add(strId);
+      const skuStr = String(prod.sku);
+      incomingIds.add(skuStr);
 
-      const exist = existingDocs.get(strId);
-      if (!exist) {
+      const docExistente = existingDocs.get(skuStr);
+
+      if (!docExistente) {
         novos++;
       } else {
-        const isEqual = JSON.stringify(prod) === JSON.stringify(exist);
-        if (isEqual) {
-          inalterados++;
-        } else {
+        // Compara se mudou algo (preço, saldo, status...)
+        const mudou = JSON.stringify(prod) !== JSON.stringify(docExistente);
+        if (mudou) {
           atualizados++;
+        } else {
+          inalterados++;
         }
       }
     }
 
+    // 3. Enviar para o Meilisearch (Upsert)
     if (produtos.length > 0) {
-      // CORREÇÃO: Informando ao Meilisearch que a Primary Key agora é sku
       await index.addDocuments(produtos, { primaryKey: 'sku' });
     }
 
+    // 4. Se for Full Sync, remove o que não veio na carga
     let removidos = 0;
     if (full_sync) {
       const idsToDelete: string[] = [];
       for (const [sku, _] of existingDocs.entries()) {
-        if (!incomingIds.has(sku)) {
-          idsToDelete.push(sku);
-        }
+        if (!incomingIds.has(sku)) idsToDelete.push(sku);
       }
-
       if (idsToDelete.length > 0) {
         await index.deleteDocuments(idsToDelete);
         removidos = idsToDelete.length;
       }
     }
 
+    // RETORNO COM MÉTRICAS (Igual você pediu)
     return {
-      mensagem: full_sync ? 'Sincronização completa realizada!' : 'Carga de produtos atualizada!',
-      total_enviados: produtos.length,
-      novos,
-      atualizados,
-      inalterados,
-      ...(full_sync && { removidos_na_limpeza: removidos }) 
+      mensagem: full_sync ? 'Sincronização Total Concluída!' : 'Lote Processado!',
+      estatisticas: {
+        total_enviados: produtos.length,
+        novos,
+        atualizados,
+        inalterados,
+        removidos_na_limpeza: removidos
+      }
     };
   }
-
   // --- 3. BUSCA PRINCIPAL (VITRINE) ---
   
   async searchProdutosCatalogo(
