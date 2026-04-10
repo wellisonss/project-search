@@ -94,7 +94,7 @@ Os sinónimos ajudam o motor de busca a devolver resultados precisos mesmo quand
 
 ## 3. Validar e Consumir a API
 
-Após a inserção dos dados (API rodando na porta `4448` via Docker):
+Após a inserção dos dados (API rodando na porta `3000` via Docker):
 
 ### Validar Inserções e Imagens
 

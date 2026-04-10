@@ -22,7 +22,7 @@ services:
     container_name: api_busca_prod
     restart: unless-stopped
     ports:
-      - "${PORT:-4448}:4448"
+      - "${PORT:-3000}:3000"
     environment:
       - MEILISEARCH_HOST=${MEILISEARCH_HOST}
       # Reutilizamos a mesma chave do motor para a API

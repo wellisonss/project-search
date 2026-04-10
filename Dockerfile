@@ -20,7 +20,7 @@ RUN npm ci --only=production
 COPY --from=builder /app/dist ./dist
 
 # Expõe a porta do NestJS
-EXPOSE 4448
+EXPOSE 3000
 
 # Comando para iniciar o servidor em produção
 CMD ["node", "dist/main"]
