@@ -51,7 +51,7 @@ export class SearchService implements OnModuleInit {
       sortableAttributes: [
         'price', 'saldo_MA', 'saldo_TO', 'saldo_PA', 'custo_cd', 'ranking'
       ],
-      // NOVA CONFIGURAÇÃO: Integração com o Google Gemini para Busca Híbrida
+      // Integração com o Google Gemini para Busca Híbrida
       embedders: {
         default: {
           source: 'rest',
@@ -64,7 +64,9 @@ export class SearchService implements OnModuleInit {
             }
           },
           response: {
-            embedding: "{{embedding.values}}"
+            embedding: {
+              values: "{{embedding}}"
+            }
           },
           dimensions: 768,
           documentTemplate: "Produto: {{doc.name}}. Marca: {{doc.brand}}. Categoria: {{doc.categories}}. Fornecedor: {{doc.fornecedor}}." 
