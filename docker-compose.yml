@@ -22,7 +22,7 @@ services:
     container_name: api_busca_prod
     restart: unless-stopped
     ports:
-      - "${PORT:-3000}:3000"
+      - "${PORT:-3336}:3336"
     environment:
       - MEILISEARCH_HOST=${MEILISEARCH_HOST}
       - MEILISEARCH_KEY=${MEILI_MASTER_KEY}
