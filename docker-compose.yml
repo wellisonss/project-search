@@ -25,8 +25,8 @@ services:
       - "${PORT:-3000}:3000"
     environment:
       - MEILISEARCH_HOST=${MEILISEARCH_HOST}
-      # Reutilizamos a mesma chave do motor para a API
       - MEILISEARCH_KEY=${MEILI_MASTER_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY} 
     depends_on:
       - meilisearch
     volumes:
