@@ -26,8 +26,8 @@ export class SearchService implements OnModuleInit {
       typoTolerance: {
         enabled: true,
         minWordSizeForTypos: { 
-          oneTypo: 4,
-          twoTypos: 8
+          oneTypo: 4, // Corrigido: Palavras a partir de 4 letras aceitam 1 erro
+          twoTypos: 8 // Corrigido: Palavras a partir de 8 letras aceitam 2 erros
         },
         disableOnAttributes: [], 
       },
@@ -40,7 +40,8 @@ export class SearchService implements OnModuleInit {
         'exactness',
       ],
       searchableAttributes: [
-        'sku', 'name', 'brand', 'categories', 'fornecedor', 'segmento'
+        // Corrigido: Ordem de importância redefinida (Nome e Marca com maior peso)
+        'name', 'brand', 'categories', 'sku', 'fornecedor', 'segmento'
       ],
       filterableAttributes: [
         'brand', 'categories', 'fornecedor', 'segmento',
@@ -50,6 +51,25 @@ export class SearchService implements OnModuleInit {
       sortableAttributes: [
         'price', 'saldo_MA', 'saldo_TO', 'saldo_PA', 'custo_cd', 'ranking'
       ],
+      // NOVA CONFIGURAÇÃO: Integração com o Google Gemini para Busca Híbrida
+      embedders: {
+        default: {
+          source: 'rest',
+          url: `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${process.env.GEMINI_API_KEY}`,
+          request: {
+            content: {
+              parts: [
+                { text: "{{text}}" }
+              ]
+            }
+          },
+          response: {
+            embedding: "{{embedding.values}}"
+          },
+          dimensions: 768,
+          documentTemplate: "Produto: {{doc.name}}. Marca: {{doc.brand}}. Categoria: {{doc.categories}}. Fornecedor: {{doc.fornecedor}}." 
+        }
+      },
       dictionary: ['d+'], 
       nonSeparatorTokens: ['+'], 
       pagination: {
@@ -57,7 +77,7 @@ export class SearchService implements OnModuleInit {
       }
     });
 
-    console.log('✅ Meilisearch configurado com sucesso!');
+    console.log('✅ Meilisearch configurado com sucesso com Google Gemini!');
   }
 
   // --- 0. FUNÇÃO PARA LIMPAR O MOTOR (NOVA) ---
@@ -77,14 +97,11 @@ export class SearchService implements OnModuleInit {
     const sinonimosMeili: Record<string, string[]> = {};
 
     for (const [palavraCorreta, termosPesquisados] of Object.entries(sinonimosDoPainel)) {
-      // 1. A palavra correta busca ela mesma e os erros
       sinonimosMeili[palavraCorreta] = termosPesquisados;
 
-      // 2. O PULO DO GATO: Fazemos cada erro apontar para a palavra correta
       for (const termoErrado of termosPesquisados) {
         const termoLimpo = termoErrado.trim();
         if (termoLimpo !== '') {
-          // Quando o usuário digitar o erro, o motor é forçado a buscar a palavra correta
           sinonimosMeili[termoLimpo] = [palavraCorreta];
         }
       }
@@ -102,7 +119,6 @@ export class SearchService implements OnModuleInit {
     const sinonimosPainel: Record<string, string[]> = {};
     const chavesIgnoradas = new Set<string>();
 
-    // Lógica reversa: Limpa a "sujeira" bidirecional para o seu painel ver o formato limpo
     for (const [palavraPrincipal, variacoes] of Object.entries(sinonimosMeili)) {
       if (chavesIgnoradas.has(palavraPrincipal)) continue;
 
@@ -123,10 +139,8 @@ export class SearchService implements OnModuleInit {
     if (sinonimosAtuais && sinonimosAtuais[palavraChave]) {
       const variacoes = sinonimosAtuais[palavraChave] || [];
       
-      // Deleta a palavra principal
       delete sinonimosAtuais[palavraChave];
 
-      // Deleta as amarras dos erros que apontavam para ela
       for (const variacao of variacoes) {
         delete sinonimosAtuais[variacao];
       }
@@ -219,7 +233,6 @@ export class SearchService implements OnModuleInit {
     const index = this.client.index('produtos');
     const offset = (page - 1) * limit;
     
-    // Tratamento rigoroso de filtros para não retornar vazio
     const filters: string[] = ["(isActive = 'S' OR isActive = 'true' OR isActive = '1')"];
 
     const comEstoque = String(apenasComEstoque) === 'true';
@@ -237,7 +250,6 @@ export class SearchService implements OnModuleInit {
     }
 
     const formatArrayFilter = (field: string, values: string[]) => {
-      // Filtra valores vazios para evitar quebra no Meilisearch
       const validValues = values.filter(v => v && v.trim() !== '');
       if (validValues.length === 0) return null;
       return `(${validValues.map(v => `${field} = "${v.trim()}"`).join(' OR ')})`;
@@ -270,6 +282,12 @@ export class SearchService implements OnModuleInit {
       limit: limit,
       offset: offset,
       showRankingScore: true,
+      
+      // NOVA CONFIGURAÇÃO: Invocando o motor Híbrido com a IA
+      hybrid: {
+        semanticRatio: 0.5,
+        embedder: 'default'
+      }
     });
 
     if (termo && termo.trim() !== '') {
@@ -313,7 +331,6 @@ export class SearchService implements OnModuleInit {
       _searchScore: hit._rankingScore ? Math.round(hit._rankingScore * 100) : 0,
     }));
 
-    // Retorno alterado para casar com o seu requisito exato {"produtos": [], "total": X}
     return { 
         produtos: produtosFormatados,
         total: searchResult.estimatedTotalHits ?? (searchResult as any).totalHits ?? 0
