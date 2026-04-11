@@ -26,8 +26,8 @@ export class SearchService implements OnModuleInit {
       typoTolerance: {
         enabled: true,
         minWordSizeForTypos: { 
-          oneTypo: 2,
-          twoTypos: 4
+          oneTypo: 4,
+          twoTypos: 8
         },
         disableOnAttributes: [], 
       },
