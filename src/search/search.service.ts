@@ -55,7 +55,9 @@ export class SearchService implements OnModuleInit {
       embedders: {
         default: {
           source: 'rest',
-          url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${process.env.GEMINI_API_KEY}`,          request: {
+          url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${process.env.GEMINI_API_KEY}`,
+          batchSize: 100,
+            request: {
             content: {
               parts: [
                 { text: "{{text}}" }
