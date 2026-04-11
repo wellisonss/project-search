@@ -52,12 +52,12 @@ export class SearchService implements OnModuleInit {
         'price', 'saldo_MA', 'saldo_TO', 'saldo_PA', 'custo_cd', 'ranking'
       ],
       // Integração com o Google Gemini para Busca Híbrida
+// Integração com o Google Gemini para Busca Híbrida (Plano Pago)
       embedders: {
         default: {
           source: 'rest',
           url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${process.env.GEMINI_API_KEY}`,
-          batchSize: 100,
-            request: {
+          request: {
             content: {
               parts: [
                 { text: "{{text}}" }
@@ -69,9 +69,9 @@ export class SearchService implements OnModuleInit {
               values: "{{embedding}}"
             }
           },
-          dimensions: 768,
+          dimensions: 3072,
           documentTemplate: "Produto: {{doc.name}}. Marca: {{doc.brand}}. Categoria: {{doc.categories}}. Fornecedor: {{doc.fornecedor}}." 
-        } as any
+        }
       },
       dictionary: ['d+'], 
       nonSeparatorTokens: ['+'], 
