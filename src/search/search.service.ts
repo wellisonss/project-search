@@ -71,7 +71,7 @@ export class SearchService implements OnModuleInit {
           },
           dimensions: 768,
           documentTemplate: "Produto: {{doc.name}}. Marca: {{doc.brand}}. Categoria: {{doc.categories}}. Fornecedor: {{doc.fornecedor}}." 
-        }
+        } as any
       },
       dictionary: ['d+'], 
       nonSeparatorTokens: ['+'], 
