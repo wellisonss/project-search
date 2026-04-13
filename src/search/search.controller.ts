@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Query, Body, Param, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Query, Body, Param, BadRequestException } from '@nestjs/common';
 import { SearchService } from './search.service';
 
 @Controller('products')
@@ -6,7 +6,31 @@ export class SearchController {
   constructor(private readonly searchService: SearchService) {}
 
   // ==========================================
-  // ROTA PARA LIMPAR O MOTOR (NOVA)
+  // NOVAS ROTAS DE CONFIGURAÇÃO DO MOTOR
+  // ==========================================
+  @Get('config')
+  async verConfiguracoes() {
+    return await this.searchService.obterConfiguracoes();
+  }
+
+  @Put('config/ia')
+  async configurarIA(@Body() body: { usar_ia: boolean }) {
+    if (typeof body.usar_ia !== 'boolean') {
+      throw new BadRequestException('O campo "usar_ia" deve ser um booleano (true/false).');
+    }
+    return await this.searchService.alternarIA(body.usar_ia);
+  }
+
+  @Put('config/atributos')
+  async configurarAtributosBusca(@Body() body: { ordem: string[] }) {
+    if (!body.ordem || !Array.isArray(body.ordem) || body.ordem.length === 0) {
+      throw new BadRequestException('Você deve fornecer um array de strings no campo "ordem".');
+    }
+    return await this.searchService.atualizarOrdemAtributos(body.ordem);
+  }
+
+  // ==========================================
+  // ROTA PARA LIMPAR O MOTOR
   // ==========================================
   @Delete('limpar')
   async limparMotor() {

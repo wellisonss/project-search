@@ -3,14 +3,22 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Meilisearch } from 'meilisearch';
 import { HistoricoBusca } from './historico.entity';
+import { ConfiguracaoBusca } from './configuracao.entity';
 
 @Injectable()
 export class SearchService implements OnModuleInit {
   private client: Meilisearch;
+  
+  private configAtual = {
+    usar_ia: true,
+    ordem_atributos: ['name', 'brand', 'categories', 'sku', 'fornecedor', 'segmento']
+  };
 
   constructor(
     @InjectRepository(HistoricoBusca)
     private historicoRepository: Repository<HistoricoBusca>,
+    @InjectRepository(ConfiguracaoBusca)
+    private configRepository: Repository<ConfiguracaoBusca>,
   ) {
     this.client = new Meilisearch({
       host: process.env.MEILISEARCH_HOST || 'http://meilisearch:7700',
@@ -19,15 +27,24 @@ export class SearchService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    console.log('⏳ Aplicando Configurações Avançadas de Tolerância e Relevância...');
+    console.log('⏳ A aplicar Configurações Avançadas de Tolerância e Relevância...');
+    
+    let config = await this.configRepository.findOne({ where: { id: 1 } });
+    if (!config) {
+      config = this.configRepository.create({ id: 1 });
+      await this.configRepository.save(config);
+    }
+    this.configAtual.usar_ia = config.usar_ia;
+    this.configAtual.ordem_atributos = config.ordem_atributos;
+
     const index = this.client.index('produtos');
 
     await index.updateSettings({
       typoTolerance: {
         enabled: true,
         minWordSizeForTypos: { 
-          oneTypo: 4, // Corrigido: Palavras a partir de 4 letras aceitam 1 erro
-          twoTypos: 8 // Corrigido: Palavras a partir de 8 letras aceitam 2 erros
+          oneTypo: 4, 
+          twoTypos: 8 
         },
         disableOnAttributes: [], 
       },
@@ -39,10 +56,7 @@ export class SearchService implements OnModuleInit {
         'sort',
         'exactness',
       ],
-      searchableAttributes: [
-        // Corrigido: Ordem de importância redefinida (Nome e Marca com maior peso)
-        'name', 'brand', 'categories', 'sku', 'fornecedor', 'segmento'
-      ],
+      searchableAttributes: this.configAtual.ordem_atributos,
       filterableAttributes: [
         'brand', 'categories', 'fornecedor', 'segmento',
         'uf_maranhao', 'uf_tocantins', 'uf_para', 'uf_nacional',
@@ -51,8 +65,6 @@ export class SearchService implements OnModuleInit {
       sortableAttributes: [
         'price', 'saldo_MA', 'saldo_TO', 'saldo_PA', 'custo_cd', 'ranking'
       ],
-      // Integração com o Google Gemini para Busca Híbrida
-// Integração com o Google Gemini para Busca Híbrida (Plano Pago)
       embedders: {
         default: {
           source: 'rest',
@@ -80,10 +92,40 @@ export class SearchService implements OnModuleInit {
       }
     });
 
-    console.log('✅ Meilisearch configurado com sucesso com Google Gemini!');
+    console.log(`✅ Meilisearch configurado com sucesso! IA Ativa: ${this.configAtual.usar_ia}`);
   }
 
-  // --- 0. FUNÇÃO PARA LIMPAR O MOTOR (NOVA) ---
+  // --- MÉTODOS DE CONFIGURAÇÃO ---
+  async obterConfiguracoes() {
+    return this.configAtual;
+  }
+
+  async alternarIA(usarIa: boolean) {
+    let config = await this.configRepository.findOne({ where: { id: 1 } });
+    if (config) {
+        config.usar_ia = usarIa;
+        await this.configRepository.save(config);
+        this.configAtual.usar_ia = usarIa;
+    }
+    return { mensagem: `Busca com IA (Gemini) foi ${usarIa ? 'ATIVADA' : 'DESATIVADA'} com sucesso.` };
+  }
+
+  async atualizarOrdemAtributos(novaOrdem: string[]) {
+    let config = await this.configRepository.findOne({ where: { id: 1 } });
+    if (config) {
+        config.ordem_atributos = novaOrdem;
+        await this.configRepository.save(config);
+        this.configAtual.ordem_atributos = novaOrdem;
+        
+        await this.client.index('produtos').updateSearchableAttributes(novaOrdem);
+    }
+    return { 
+        mensagem: 'Ordem de prioridade de busca atualizada com sucesso!', 
+        nova_ordem: novaOrdem 
+    };
+  }
+
+  // --- 0. FUNÇÃO PARA LIMPAR O MOTOR ---
   async limparMotor() {
     const index = this.client.index('produtos');
     const task = await index.deleteAllDocuments();
@@ -93,8 +135,7 @@ export class SearchService implements OnModuleInit {
     };
   }
 
-// --- 1. FUNÇÕES DE SINÓNIMOS (COM TRADUTOR BIDIRECIONAL) ---
-  
+  // --- 1. FUNÇÕES DE SINÓNIMOS ---
   async atualizarSinonimos(sinonimosDoPainel: Record<string, string[]>) {
     const index = this.client.index('produtos');
     const sinonimosMeili: Record<string, string[]> = {};
@@ -279,19 +320,23 @@ export class SearchService implements OnModuleInit {
     if (sort === 'menor-preco') sortRules.push('price:asc');
     else if (sort === 'maior-preco') sortRules.push('price:desc');
 
-    const searchResult = await index.search(termo, {
+    const searchOptions: any = {
       filter: filters.length > 0 ? filters.filter(Boolean).join(' AND ') : undefined,
       sort: sortRules.length > 0 ? sortRules : undefined,
       limit: limit,
       offset: offset,
       showRankingScore: true,
-      
-      // NOVA CONFIGURAÇÃO: Invocando o motor Híbrido com a IA
-      hybrid: {
+    };
+
+    // Aplicar motor Híbrido apenas se estiver ativado na base de dados
+    if (this.configAtual.usar_ia) {
+      searchOptions.hybrid = {
         semanticRatio: 0.5,
         embedder: 'default'
-      }
-    });
+      };
+    }
+
+    const searchResult = await index.search(termo, searchOptions);
 
     if (termo && termo.trim() !== '') {
       const log = this.historicoRepository.create({

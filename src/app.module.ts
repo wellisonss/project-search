@@ -4,13 +4,14 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SearchModule } from './search/search.module';
 import { HistoricoBusca } from './search/historico.entity';
+import { ConfiguracaoBusca } from './search/configuracao.entity';
 
 @Module({
   imports: [
     TypeOrmModule.forRoot({
       type: 'sqlite',
       database: 'data/metricas.sqlite',
-      entities: [HistoricoBusca],
+      entities: [HistoricoBusca, ConfiguracaoBusca],
       synchronize: true,
     }),
     SearchModule,
