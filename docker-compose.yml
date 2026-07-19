@@ -1,34 +1,55 @@
+# ============================================================
+# Orquestração fullstack: Meilisearch + API (NestJS) + Painel (Next.js)
+# Suba tudo com:  docker compose up --build
+#
+# Variáveis lidas de um arquivo .env na raiz (veja .env.example).
+# ============================================================
 services:
-  # 1. MOTOR DE BUSCA (MEILISEARCH)
+  # 1) Motor de busca
   meilisearch:
-    image: getmeili/meilisearch:latest
-    container_name: motor_busca_prod
+    image: getmeili/meilisearch:v1.10
+    container_name: search_engine
     restart: unless-stopped
     ports:
       - "7700:7700"
     environment:
-      # Puxa os valores diretamente do ficheiro .env
-      - MEILI_ENV=${MEILI_ENV}
-      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - MEILI_ENV=${MEILI_ENV:-development}
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-masterKey}
     volumes:
-      # Guarda os índices e configurações do motor fisicamente no servidor
-      - ./meili_data:/meili_data
+      - meili_data:/meili_data
 
-  # 2. A SUA API (NESTJS)
+  # 2) API de busca (NestJS)
   api:
     build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: api_busca_prod
+      context: ./backend
+    container_name: search_api
     restart: unless-stopped
     ports:
-      - "${PORT:-3336}:3336"
+      - "${API_PORT:-3336}:3336"
     environment:
-      - MEILISEARCH_HOST=${MEILISEARCH_HOST}
-      - MEILISEARCH_KEY=${MEILI_MASTER_KEY}
-      - GEMINI_API_KEY=${GEMINI_API_KEY} 
+      - PORT=3336
+      - MEILISEARCH_HOST=http://meilisearch:7700
+      - MEILISEARCH_KEY=${MEILI_MASTER_KEY:-masterKey}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     depends_on:
       - meilisearch
     volumes:
-      # Guarda o ficheiro SQLite fisicamente na pasta ./data do seu servidor
-      - ./data:/app/data
+      # Persiste o SQLite de métricas fora do container
+      - ./backend/data:/app/data
+
+  # 3) Painel administrativo (Next.js)
+  web:
+    build:
+      context: ./frontend
+      args:
+        # Embutida no bundle durante o build (uso no navegador)
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3336/products}
+    container_name: search_panel
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    depends_on:
+      - api
+
+volumes:
+  meili_data:

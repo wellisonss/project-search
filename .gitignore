@@ -1,57 +1,54 @@
-# compiled output
-/dist
-/node_modules
-/build
-/meili_data
+# ============================================================
+# Monorepo — arquivos ignorados
+# ============================================================
+
+# Dependências
+node_modules/
+
+# Builds
+dist/
+/build/
+.next/
+out/
+
+# Meilisearch (dados locais do motor)
+meili_data/
+
+# Banco de métricas (SQLite) e dumps
+*.sqlite
+*.sqlite3
+
+# Variáveis de ambiente (nunca versionar segredos)
+.env
+.env.*.local
+.env.local
 
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-lerna-debug.log*
 
-# OS
-.DS_Store
-
-# Tests
+# Cobertura de testes
 /coverage
-/.nyc_output
+.nyc_output
 
-# IDEs and editors
+# Sistema operacional
+.DS_Store
+Thumbs.db
+
+# Editores/IDEs
 /.idea
 .project
 .classpath
-.c9/
-*.launch
 .settings/
 *.sublime-workspace
-
-# IDE - VSCode
 .vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
 !.vscode/extensions.json
 
-# dotenv environment variable files
-.env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
-
-# temp directory
-.temp
+# Temporários
 .tmp
-
-# Runtime data
-pids
-*.pid
-*.seed
-*.pid.lock
-
-# Diagnostic reports (https://nodejs.org/api/report.html)
-report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+.temp
+*.tsbuildinfo

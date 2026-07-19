@@ -21,8 +21,8 @@ export class SearchService implements OnModuleInit {
     private configRepository: Repository<ConfiguracaoBusca>,
   ) {
     this.client = new Meilisearch({
-      host: process.env.MEILISEARCH_HOST || 'http://meilisearch:7700',
-      apiKey: process.env.MEILISEARCH_KEY || 'MinhaSenhaForteDeProducao2026!', 
+      host: process.env.MEILISEARCH_HOST || 'http://localhost:7700',
+      apiKey: process.env.MEILISEARCH_KEY || 'masterKey',
     });
   }
 
