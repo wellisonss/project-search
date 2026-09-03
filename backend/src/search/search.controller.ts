@@ -1,9 +1,34 @@
-import { Controller, Get, Post, Put, Delete, Query, Body, Param, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Query, Body, Param, BadRequestException, UseGuards } from '@nestjs/common';
 import { SearchService } from './search.service';
+import { PovoamentoService } from './povoamento.service';
+import { SecretGuard } from './secret.guard';
 
 @Controller('products')
 export class SearchController {
-  constructor(private readonly searchService: SearchService) {}
+  constructor(
+    private readonly searchService: SearchService,
+    private readonly povoamentoService: PovoamentoService,
+  ) {}
+
+  // ==========================================
+  // POVOAMENTO A PARTIR DE LISTA DE PREÇO (busca-produtos na API principal)
+  // ==========================================
+  @Post('povoar-por-lista')
+  @UseGuards(SecretGuard)
+  async povoarPorLista(@Body() body: { priceListVersionIds?: number[] }) {
+    let ids = body?.priceListVersionIds;
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      // Sem lista explícita no body: cai para PROJECT_SEARCH_PRICE_LIST_IDS (ex.: "5000088,5000089").
+      const fromEnv = process.env.PROJECT_SEARCH_PRICE_LIST_IDS;
+      ids = fromEnv ? fromEnv.split(',').map((v) => Number(v.trim())).filter((v) => Number.isInteger(v) && v > 0) : [];
+    }
+    if (ids.length === 0) {
+      throw new BadRequestException(
+        'Informe "priceListVersionIds" no body, ou configure PROJECT_SEARCH_PRICE_LIST_IDS.',
+      );
+    }
+    return await this.povoamentoService.povoarPorListaPreco(ids);
+  }
 
   // ==========================================
   // NOVAS ROTAS DE CONFIGURAÇÃO DO MOTOR
@@ -14,6 +39,7 @@ export class SearchController {
   }
 
   @Put('config/ia')
+  @UseGuards(SecretGuard)
   async configurarIA(@Body() body: { usar_ia: boolean }) {
     if (typeof body.usar_ia !== 'boolean') {
       throw new BadRequestException('O campo "usar_ia" deve ser um booleano (true/false).');
@@ -22,6 +48,7 @@ export class SearchController {
   }
 
   @Put('config/atributos')
+  @UseGuards(SecretGuard)
   async configurarAtributosBusca(@Body() body: { ordem: string[] }) {
     if (!body.ordem || !Array.isArray(body.ordem) || body.ordem.length === 0) {
       throw new BadRequestException('Você deve fornecer um array de strings no campo "ordem".');
@@ -33,6 +60,7 @@ export class SearchController {
   // ROTA PARA LIMPAR O MOTOR
   // ==========================================
   @Delete('limpar')
+  @UseGuards(SecretGuard)
   async limparMotor() {
     return await this.searchService.limparMotor();
   }
@@ -76,6 +104,7 @@ export class SearchController {
   // ROTA DE POVOAMENTO (SINC DE PRODUTOS)
   // ==========================================
   @Post('produtos')
+  @UseGuards(SecretGuard)
   async indexarProdutos(@Body() body: any) {
     const payload = Array.isArray(body) 
       ? { full_sync: false, produtos: body } 
@@ -92,6 +121,7 @@ export class SearchController {
   // ROTAS DE GESTÃO DE SINÓNIMOS
   // ==========================================
   @Post('sinonimos')
+  @UseGuards(SecretGuard)
   async salvarSinonimos(@Body() body: Record<string, string[]>) {
     await this.searchService.atualizarSinonimos(body);
     return { mensagem: 'Sinónimos enviados com sucesso!' };
@@ -103,9 +133,10 @@ export class SearchController {
   }
 
   @Delete('sinonimos/:palavra')
+  @UseGuards(SecretGuard)
   async excluirUmSinonimo(@Param('palavra') palavra: string) {
     const resultado = await this.searchService.removerUmSinonimo(palavra);
-    
+
     if (!resultado) {
       throw new BadRequestException(`O sinónimo para '${palavra}' não foi encontrado.`);
     }
@@ -114,6 +145,7 @@ export class SearchController {
   }
 
   @Delete('sinonimos')
+  @UseGuards(SecretGuard)
   async excluirTodosSinonimos() {
     await this.searchService.resetarSinonimos();
     return { mensagem: 'Todos os sinónimos foram removidos com sucesso!' };

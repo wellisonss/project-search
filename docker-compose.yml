@@ -1,55 +1,64 @@
-# ============================================================
-# Orquestração fullstack: Meilisearch + API (NestJS) + Painel (Next.js)
-# Suba tudo com:  docker compose up --build
-#
-# Variáveis lidas de um arquivo .env na raiz (veja .env.example).
-# ============================================================
 services:
-  # 1) Motor de busca
-  meilisearch:
-    image: getmeili/meilisearch:v1.10
-    container_name: search_engine
-    restart: unless-stopped
-    ports:
-      - "7700:7700"
-    environment:
-      - MEILI_ENV=${MEILI_ENV:-development}
-      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY:-masterKey}
-    volumes:
-      - meili_data:/meili_data
+meilisearch:
+image: getmeili/meilisearch:v1.10
+environment:
+MEILI_ENV: production
+MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+volumes:
+- meili-data:/meili_data
+networks:
+- project-search-net
+deploy:
+replicas: 1
+restart_policy:
+condition: on-failure
+healthcheck:
+test:
+- CMD
+- wget
+- -qO-
+- http://localhost:7700/health
+interval: 15s
+timeout: 5s
+retries: 5
+start_period: 10s
 
-  # 2) API de busca (NestJS)
-  api:
-    build:
-      context: ./backend
-    container_name: search_api
-    restart: unless-stopped
-    ports:
-      - "${API_PORT:-3336}:3336"
-    environment:
-      - PORT=3336
-      - MEILISEARCH_HOST=http://meilisearch:7700
-      - MEILISEARCH_KEY=${MEILI_MASTER_KEY:-masterKey}
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
-    depends_on:
-      - meilisearch
-    volumes:
-      # Persiste o SQLite de métricas fora do container
-      - ./backend/data:/app/data
+api:
+image: project-search-api:latest
+ports:
+- "3336:3336"
+environment:
+PORT: 3336
+MEILISEARCH_HOST: http://meilisearch:7700
+MEILISEARCH_KEY: ${MEILI_MASTER_KEY}
+GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+PROJECT_SEARCH_SECRET: ${PROJECT_SEARCH_SECRET:-}
+API_PRINCIPAL_URL: ${API_PRINCIPAL_URL}
+PROJECT_SEARCH_PRICE_LIST_IDS: ${PROJECT_SEARCH_PRICE_LIST_IDS:-5000088,5000089}
+volumes:
+- api-data:/app/data
+networks:
+- project-search-net
+deploy:
+replicas: 1
+restart_policy:
+condition: on-failure
+healthcheck:
+test:
+- CMD
+- wget
+- -qO-
+- http://localhost:3336/products/config
+interval: 15s
+timeout: 5s
+retries: 5
+start_period: 10s
 
-  # 3) Painel administrativo (Next.js)
-  web:
-    build:
-      context: ./frontend
-      args:
-        # Embutida no bundle durante o build (uso no navegador)
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:3336/products}
-    container_name: search_panel
-    restart: unless-stopped
-    ports:
-      - "${WEB_PORT:-3000}:3000"
-    depends_on:
-      - api
+networks:
+project-search-net:
+driver: overlay
+attachable: true
 
 volumes:
-  meili_data:
+meili-data:
+api-data:

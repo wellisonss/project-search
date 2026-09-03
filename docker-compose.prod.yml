@@ -1,0 +1,96 @@
+# =============================================================================
+# Stack de PRODUÇÃO (Docker Swarm / Portainer) — totalmente separada da stack
+# prjdev-competitividade e da chatbot-disponibilidade. Não compartilha rede
+# nem serviço com nenhuma delas.
+#
+# Direção da sincronização de catálogo (POST /products/povoar-por-lista): É
+# ESTA API quem chama a API principal (GET .../busca-produtos/produtos-por-lista)
+# pra buscar o catálogo cru do ERP, e indexa aqui mesmo — a API principal não
+# sabe nada sobre Meilisearch/embeddings, só devolve dados. Mesma porta
+# publicada que o bot já usa pra falar com a fachada erp-disponibilidade.
+#
+# Diferenças pro docker-compose.yml de desenvolvimento local:
+#   - rede própria como overlay (Swarm) em vez de bridge
+#   - meilisearch NÃO publica porta — só a `api` fala com ele, dentro da
+#     rede da própria stack (local publica 7700 pra debug, produção não)
+#   - painel Next.js (`web`) fica de fora desta primeira rodada — não é
+#     consumido por nada externo hoje, só administração manual
+#   - sem `container_name:` (Swarm nomeia as réplicas; não pode ser fixo)
+#   - `deploy.restart_policy` no lugar de `restart:` (Swarm ignora `restart:`)
+#   - volume nomeado em vez de bind mount pro Meilisearch — bind mount
+#     relativo não é confiável em deploy via upload de tarball no Portainer
+#   - variáveis de ambiente via ${VAR} (definidas nas Environment variables
+#     do stack no Portainer) em vez de .env — o .env nunca vai no tarball
+#
+# ANTES DE SUBIR:
+#   1. Gerar um MEILI_MASTER_KEY forte — se não setar, cai no default fraco
+#      "masterKey" (mesmo valor documentado no docker-compose.yml local).
+#   2. Gerar um PROJECT_SEARCH_SECRET forte e colar TAMBÉM na
+#      prjdev-competitividade-api (mesma variável, protege os dois sentidos:
+#      escrita aqui — POST /produtos, DELETE /limpar — e a rota de leitura
+#      lá — GET /busca-produtos/produtos-por-lista). Vazio = guard libera
+#      geral dos dois lados (mesmo comportamento do ERP_DISPONIBILIDADE_SECRET).
+#   3. API_PRINCIPAL_URL: endereço público da prjdev-competitividade-api
+#      (ex.: http://SEU_IP:3006).
+#   4. GEMINI_API_KEY é opcional — sem ela, os produtos são indexados sem
+#      busca semântica (só keyword/BM25).
+
+services:
+  meilisearch:
+    image: getmeili/meilisearch:v1.13
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+    volumes:
+      - meili-data:/meili_data
+    networks:
+      project-search-net:
+        aliases:
+          - meilisearch
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+
+  api:
+    # Imagem buildada antes, separadamente (Images -> Build a new image ->
+    # Upload, com project-search-backend-build.tar.gz), não aqui — a tela
+    # de Add stack só aceita compose YAML puro, sem contexto de build.
+    image: project-search-api:latest
+    ports:
+      - "3336:3336"
+    environment:
+      PORT: 3336
+      MEILISEARCH_HOST: http://meilisearch:7700
+      MEILISEARCH_KEY: ${MEILI_MASTER_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      PROJECT_SEARCH_SECRET: ${PROJECT_SEARCH_SECRET:-}
+      # Endereço público da prjdev-competitividade-api — é ESTA API quem
+      # busca o catálogo de lá (ver POST /products/povoar-por-lista).
+      API_PRINCIPAL_URL: ${API_PRINCIPAL_URL}
+      PROJECT_SEARCH_PRICE_LIST_IDS: ${PROJECT_SEARCH_PRICE_LIST_IDS:-5000088,5000089}
+    volumes:
+      - api-data:/app/data
+    networks:
+      project-search-net:
+        aliases:
+          - project-search-api
+    depends_on:
+      - meilisearch
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3336/products/config"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+networks:
+  project-search-net:
+    driver: overlay
+
+volumes:
+  meili-data:
+  api-data:

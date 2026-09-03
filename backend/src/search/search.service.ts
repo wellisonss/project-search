@@ -60,29 +60,23 @@ export class SearchService implements OnModuleInit {
       filterableAttributes: [
         'brand', 'categories', 'fornecedor', 'segmento',
         'uf_maranhao', 'uf_tocantins', 'uf_para', 'uf_nacional',
-        'saldo_MA', 'saldo_TO', 'saldo_PA', 'quantityAvailable', 'isActive'
+        'saldo_MA', 'saldo_TO', 'saldo_PA', 'quantityAvailable', 'isActive',
+        'listasPrecoIds', 'listasPrecoNomes'
       ],
       sortableAttributes: [
         'price', 'saldo_MA', 'saldo_TO', 'saldo_PA', 'custo_cd', 'ranking'
       ],
+      // userProvided: os embeddings são pré-computados (em lote, fora do
+      // Meilisearch) e enviados junto do documento em `_vectors.default`.
+      // O source `rest` (uma chamada HTTP ao Gemini por documento, feita
+      // pelo próprio Meilisearch durante a indexação) trava em escala —
+      // testado com ~22 mil produtos, rate limit do Gemini bloqueou a fila
+      // inteira por 10+ minutos num único lote de 500. Ver scripts de
+      // povoamento em prjdev-competitividade-api/scripts/.
       embedders: {
         default: {
-          source: 'rest',
-          url: `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${process.env.GEMINI_API_KEY}`,
-          request: {
-            content: {
-              parts: [
-                { text: "{{text}}" }
-              ]
-            }
-          },
-          response: {
-            embedding: {
-              values: "{{embedding}}"
-            }
-          },
+          source: 'userProvided',
           dimensions: 3072,
-          documentTemplate: "Produto: {{doc.name}}. Marca: {{doc.brand}}. Categoria: {{doc.categories}}. Fornecedor: {{doc.fornecedor}}." 
         }
       },
       dictionary: ['d+'], 
@@ -261,6 +255,32 @@ export class SearchService implements OnModuleInit {
     };
   }
 
+  // --- EMBEDDING DA CONSULTA ---
+  // Com embedder `userProvided`, o Meilisearch não sabe vetorizar o texto da
+  // busca sozinho (só documentos vêm com _vectors pré-computados) — o vector
+  // param é obrigatório na busca híbrida. Uma chamada por busca (não por
+  // documento), sem problema de rate limit em escala de indexação.
+  private async embedarConsulta(texto: string): Promise<number[] | null> {
+    if (!process.env.GEMINI_API_KEY) return null;
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${process.env.GEMINI_API_KEY}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: { parts: [{ text: texto }] } }),
+      });
+      if (!res.ok) {
+        console.warn('⚠️ Falha ao gerar embedding da consulta:', res.status, await res.text());
+        return null;
+      }
+      const data: any = await res.json();
+      return data?.embedding?.values ?? null;
+    } catch (e) {
+      console.warn('⚠️ Erro ao gerar embedding da consulta:', (e as Error).message);
+      return null;
+    }
+  }
+
   // --- 3. BUSCA PRINCIPAL (VITRINE) ---
   async searchProdutosCatalogo(
     termo: string, 
@@ -328,12 +348,17 @@ export class SearchService implements OnModuleInit {
       showRankingScore: true,
     };
 
-    // Aplicar motor Híbrido apenas se estiver ativado na base de dados
-    if (this.configAtual.usar_ia) {
-      searchOptions.hybrid = {
-        semanticRatio: 0.5,
-        embedder: 'default'
-      };
+    // Aplicar motor Híbrido apenas se estiver ativado e a consulta puder ser
+    // vetorizada — sem vector, a busca com embedder userProvided falha.
+    if (this.configAtual.usar_ia && termo && termo.trim() !== '') {
+      const vector = await this.embedarConsulta(termo);
+      if (vector) {
+        searchOptions.hybrid = {
+          semanticRatio: 0.5,
+          embedder: 'default'
+        };
+        searchOptions.vector = vector;
+      }
     }
 
     const searchResult = await index.search(termo, searchOptions);
@@ -376,6 +401,8 @@ export class SearchService implements OnModuleInit {
       facing_temp_PA: hit.facing_temp_PA ?? null,
       custo_cd: hit.custo_cd ?? null,
       isActive: hit.isActive ?? 'S',
+      listasPrecoIds: hit.listasPrecoIds ?? [],
+      listasPrecoNomes: hit.listasPrecoNomes ?? [],
       _searchScore: hit._rankingScore ? Math.round(hit._rankingScore * 100) : 0,
     }));
 
